@@ -694,6 +694,8 @@
             log('Disconnected from macro pad');
         }
 
+        let readBuffer = '';
+
         async function readLoop() {
             while (keepReading && reader) {
                 try {
@@ -701,7 +703,17 @@
                     if (done) break;
                     
                     if (value) {
-                        processSerialData(value);
+                        readBuffer += value;
+                        
+                        // Process complete lines
+                        let lines = readBuffer.split('\n');
+                        readBuffer = lines.pop(); // Keep incomplete line in buffer
+                        
+                        lines.forEach(line => {
+                            if (line.trim()) {
+                                processSerialData(line.trim());
+                            }
+                        });
                     }
                 } catch (error) {
                     log('Read error: ' + error.message, 'error');
@@ -710,22 +722,21 @@
             }
         }
 
-        function processSerialData(data) {
-            const lines = data.trim().split('\n');
-            lines.forEach(line => {
-                if (line.trim()) {
-                    log('← ' + line.trim());
-                    
-                    // Parse button mapping responses
-                    const match = line.match(/Button (\d+) = (\d+)/);
-                    if (match) {
-                        const buttonNum = parseInt(match[1]) - 1;
-                        const keycode = parseInt(match[2]);
-                        buttonMappings[buttonNum] = keycode;
-                        updateButtonDisplay(buttonNum, keycode);
-                    }
+        function processSerialData(line) {
+            log('← ' + line);
+            
+            // Parse button mapping responses - be more strict about format
+            const match = line.match(/Button\s+(\d+)\s*=\s*(\d+)/);
+            if (match) {
+                const buttonNum = parseInt(match[1]);
+                const keycode = parseInt(match[2]);
+                
+                // Validate the data
+                if (buttonNum >= 1 && buttonNum <= 8 && !isNaN(keycode) && keycode >= 0 && keycode <= 255) {
+                    buttonMappings[buttonNum - 1] = keycode;
+                    updateButtonDisplay(buttonNum - 1, keycode);
                 }
-            });
+            }
         }
 
         async function sendCommand(command) {
@@ -742,17 +753,25 @@
         async function refreshMappings() {
             log('Refreshing mappings...');
             
-            // Clear any pending data first
-            await new Promise(resolve => setTimeout(resolve, 200));
+            // Clear the read buffer
+            readBuffer = '';
             
+            // Send a blank line first to clear Arduino buffer
+            await writer.write('\n');
+            await new Promise(resolve => setTimeout(resolve, 300));
+            
+            // Reset local mappings first
+            buttonMappings = Array(8).fill(null);
+            
+            // Query each button one by one with plenty of time
             for (let i = 1; i <= 8; i++) {
                 await sendCommand(`GET ${i}\n`);
                 // Wait longer for Arduino to respond
-                await new Promise(resolve => setTimeout(resolve, 300));
+                await new Promise(resolve => setTimeout(resolve, 400));
             }
             
             // Give extra time for last responses to come in
-            await new Promise(resolve => setTimeout(resolve, 500));
+            await new Promise(resolve => setTimeout(resolve, 600));
             log('Refresh complete!');
         }
 
