@@ -607,6 +607,9 @@
             const command = `SET ${currentEditButton + 1} ${selectedKeycode}\n`;
             await sendCommand(command);
             
+            // Wait for Arduino to save to EEPROM
+            await new Promise(resolve => setTimeout(resolve, 300));
+            
             // Update local mapping
             buttonMappings[currentEditButton] = selectedKeycode;
             updateButtonDisplay(currentEditButton, selectedKeycode);
@@ -658,7 +661,7 @@
                 readLoop();
 
                 // Wait a bit for Arduino to initialize, then get current mappings
-                setTimeout(() => refreshMappings(), 1000);
+                setTimeout(() => refreshMappings(), 1500);
 
             } catch (error) {
                 log('Error connecting: ' + error.message, 'error');
@@ -733,21 +736,32 @@
             
             log('→ ' + command.trim());
             await writer.write(command);
-            await new Promise(resolve => setTimeout(resolve, 100)); // Small delay for Arduino to respond
+            await new Promise(resolve => setTimeout(resolve, 150)); // Increased delay for Arduino to respond
         }
 
         async function refreshMappings() {
             log('Refreshing mappings...');
+            
+            // Clear any pending data first
+            await new Promise(resolve => setTimeout(resolve, 200));
+            
             for (let i = 1; i <= 8; i++) {
                 await sendCommand(`GET ${i}\n`);
-                await new Promise(resolve => setTimeout(resolve, 100));
+                // Wait longer for Arduino to respond
+                await new Promise(resolve => setTimeout(resolve, 300));
             }
+            
+            // Give extra time for last responses to come in
+            await new Promise(resolve => setTimeout(resolve, 500));
+            log('Refresh complete!');
         }
 
         async function resetToDefaults() {
             if (confirm('Reset all buttons to default mappings (F13-F20)?')) {
                 await sendCommand('RESET\n');
-                setTimeout(() => refreshMappings(), 500);
+                // Wait for Arduino to reset and save to EEPROM
+                await new Promise(resolve => setTimeout(resolve, 800));
+                await refreshMappings();
             }
         }
 
